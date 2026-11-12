@@ -1,0 +1,50 @@
+name: Check plugins
+
+# `pull_request` (not `pull_request_target`): a pull request from a fork runs with a read-only token and no secrets.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check plugins
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      # Guard: every workflow job must declare timeout-minutes <= 30. The GitHub default is 6 hours.
+      - name: Enforce workflow job timeouts
+        run: |
+          python3 - << 'EOF'
+          import glob, sys, yaml
+          failed = False
+          for f in sorted(glob.glob('.github/workflows/*.yml') + glob.glob('.github/workflows/*.yaml')):
+              jobs = (yaml.safe_load(open(f)) or {}).get('jobs', {}) or {}
+              for name, job in jobs.items():
+                  if 'uses' in job:
+                      continue
+                  t = job.get('timeout-minutes')
+                  if t is None or t > 30:
+                      print(f"::error file={f}::job '{name}' must set timeout-minutes <= 30 (found: {t})")
+                      failed = True
+          sys.exit(1 if failed else 0)
+          EOF
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      # Installs only this repo's own tools (svelte, typescript, vitest). Nothing from a plugin is installed or run.
+      - run: npm ci --ignore-scripts
+
+      - name: Test the checks
+        run: npm test
+
+      - name: Check every plugin
+        run: npm run validate

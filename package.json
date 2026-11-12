@@ -1,0 +1,23 @@
+{
+	"name": "passports-plugins",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Community passports for passports.social: one folder per passport, checked in CI before review",
+	"license": "MIT",
+	"type": "module",
+	"engines": {
+		"node": ">=22"
+	},
+	"scripts": {
+		"validate": "node scripts/validate-plugin.mjs",
+		"test": "vitest run",
+		"preview": "vite --config vite.config.mjs"
+	},
+	"devDependencies": {
+		"@sveltejs/vite-plugin-svelte": "^7.3.1",
+		"svelte": "^5.57.1",
+		"typescript": "^6.0.3",
+		"vite": "^8.3.8",
+		"vitest": "^5.0.5"
+	}
+}
