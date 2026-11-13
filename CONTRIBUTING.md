@@ -4,7 +4,7 @@ A passport is a folder under `passports/<slug>/` with three things: `registry.ts
 
 ## How a passport gets into the app
 
-1. **You open a pull request** adding your folder.
+1. **You open a pull request** adding your folder, on [Tangled](https://tangled.org/passports.social/passports-plugins). The GitHub repository is a read-only mirror and does not take pull requests.
 2. **CI checks it** (`npm run validate`). The checks read your files as data and never run them. A pull request that fails them is not reviewed until it passes.
 3. **A maintainer reviews it** (the registry, the card and the sample data) and either asks for changes or approves it.
 4. **It is merged** into `main` here.

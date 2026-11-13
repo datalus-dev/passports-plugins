@@ -1,5 +1,7 @@
 # passports-plugins
 
+> **This GitHub repository is a read-only mirror.** Development, pull requests and review happen on Tangled: **https://tangled.org/passports.social/passports-plugins**. Please open pull requests and issues there; they can't be merged here.
+
 Community passports for [passports.social](https://passports.social). Each folder under `passports/` is one passport, submitted by a contributor and checked before it is reviewed.
 
 A passport here is **declarative**: you describe it and draw its card. You do not write SQL, a data loader, a page or forms. The app generates those from your description.
