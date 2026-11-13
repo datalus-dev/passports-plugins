@@ -1,0 +1,21 @@
+# Runs on Tangled's spindle. Turn it on in the repo: Settings -> Pipelines -> run CI with Tangled.
+# Installs only this repo's own tools (svelte, typescript, vitest). Nothing from a plugin is installed or run.
+when:
+  - event: push
+    branch: main
+  - event: pull_request
+    branch: main
+
+engine: microvm
+image: nixos
+
+dependencies:
+  - nodejs_22
+
+steps:
+  - name: Install
+    command: npm ci --ignore-scripts
+  - name: Test the checks
+    command: npm test
+  - name: Check every plugin
+    command: npm run validate
