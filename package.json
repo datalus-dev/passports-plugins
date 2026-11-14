@@ -11,7 +11,8 @@
 	"scripts": {
 		"validate": "node scripts/validate-plugin.mjs",
 		"test": "vitest run",
-		"preview": "vite --config vite.config.mjs"
+		"preview": "vite --config vite.config.mjs",
+		"tile": "node scripts/build-tile.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/vite-plugin-svelte": "^7.3.1",

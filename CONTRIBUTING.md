@@ -122,6 +122,24 @@ A card draws one entry from plain props and does nothing else.
 
 One to twelve example entries, keyed by column (and optionally `note`), used to preview your card. Dates look like `2025-07-15`.
 
+## Web tiles
+
+Any card can also be built as a [Web Tile](https://dasl.ing/tiles.html): a small page that carries everything it needs, has no network, and can be shown inside a post, a chat or another app. Nothing in the card changes: the rules above (props only, no network, no storage, no `document` or `window`) are the ones a tile runs under.
+
+```
+npm run tile -- passports/national_parks                  # the first card, into dist-tiles/national_parks/<card>/
+npm run tile -- passports/national_parks --card <entry>   # another card
+npm run tile -- passports/national_parks --size 176x200   # the size the tile asks its host to show it at
+```
+
+The passport has to pass `npm run validate` first. You get a folder of `index.html`, `app.js` and `manifest.json`:
+
+- **Until a host sends data** the tile shows the first entry of your `sample.json`.
+- **A host sends an entry or props** over the data-passing protocol (`/.well-known/web-tiles/data.js`): either an entry keyed by your columns (`{ park_name: 'Acadia', visit_date: '2024-09-14' }`, with dates shown as text like the app does) or the card's own props (`{ title: 'Acadia', date: 'Sep 14, 2024' }`). Each one replaces what is shown, so send a whole entry. Anything that isn't plain text, a number or a boolean, and any key that is neither a column with a `card` prop nor a card prop, is ignored.
+- **The manifest** carries a name (the passport's and the card's), the passport's description and the size. It has no `resources` list and no author or license: the tools that pack a tile fill in the former, and a tile manifest has no field for the latter.
+
+To pack or publish the folder, use the DASL tools (`npx @dasl/atile bundle <folder> <name>.tile`, or `atile publish -s <folder>`); this repo doesn't run them. A tile published to someone's repository is public to anyone who can read it, so publish only entries the owner has made public.
+
 ## What is not supported yet
 
 Photos the owner uploads in the form (photos that come from a `source` as `blob` links work), publishing entries as AT Protocol records and the lexicons for them, a `lexicons/` folder, folios, and links from an entry to a place. A passport that needs these is a full-code passport and is reviewed as a whole; open an issue first.
