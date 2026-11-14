@@ -37,7 +37,10 @@ export const REGISTRY_KEYS = [
 	'entryTable',
 	'hasVisibility',
 	'dateFields',
-	'fields'
+	'fields',
+	'authors',
+	'license',
+	'repository'
 ];
 
 export const REQUIRED_REGISTRY_KEYS = [
@@ -49,12 +52,22 @@ export const REQUIRED_REGISTRY_KEYS = [
 	'entriesTitle',
 	'entrySlugs',
 	'entryTable',
-	'fields'
+	'fields',
+	'authors',
+	'license'
 ];
 
-export const LIMITS = { fields: 20, selectOptions: 30, sample: 12, registryBytes: 20_000, cardBytes: 30_000, sampleBytes: 20_000 };
+export const LIMITS = { fields: 20, authors: 10, selectOptions: 30, sample: 12, registryBytes: 20_000, cardBytes: 30_000, sampleBytes: 20_000 };
 
-// A card may import only these.
+// The manifest: who made the passport and under what terms. Shown wherever the passport is credited.
+// A passport is copied into the app and published, so its license has to allow that; these are the permissive ones.
+export const LICENSES = ['MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'CC0-1.0'];
+export const AUTHOR_KEYS = ['name', 'url', 'did'];
+export const DID_RE = /^did:(plc|web):[a-zA-Z0-9._:%-]+$/;
+export const HTTPS_URL_RE = /^https:\/\/[^\s]+$/;
+
+// A card may import only these. A card is self-contained: the card library (passports-cards) imports the cards
+// that live here, not the other way round.
 export const ALLOWED_IMPORTS = ['svelte'];
 
 // Browser and runtime globals a card has no business touching: a card draws props, it does not fetch or store.

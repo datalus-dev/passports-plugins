@@ -14,11 +14,15 @@ import { parse } from 'svelte/compiler';
 import { parseRegistry } from './lib/registry-literal.mjs';
 import {
 	ALLOWED_IMPORTS,
+	AUTHOR_KEYS,
 	CARD_SLUG_RE,
 	COLUMN_RE,
 	DAISY_CLASSES,
 	DATE_RE,
+	DID_RE,
 	FIELD_TYPES,
+	HTTPS_URL_RE,
+	LICENSES,
 	FORBIDDEN_ELEMENTS,
 	FORBIDDEN_IDENTIFIERS,
 	FORBIDDEN_SVELTE_NODES,
@@ -194,6 +198,26 @@ export function validatePlugin(dir, { reserved = [] } = {}) {
 
 	if (typeof reg.entryTable !== 'string' || !TABLE_RE.test(reg.entryTable)) r('"entryTable" must be lowercase letters, digits and underscores');
 	else if (typeof reg.slug === 'string' && !reg.entryTable.startsWith(`${reg.slug}_`)) r(`"entryTable" must start with "${reg.slug}_"`);
+
+	// manifest: authors, license, repository
+	if ('authors' in reg) {
+		if (!Array.isArray(reg.authors) || reg.authors.length === 0 || reg.authors.length > LIMITS.authors) {
+			r(`"authors" must be a list of 1 to ${LIMITS.authors} authors`);
+		} else {
+			reg.authors.forEach((a, i) => {
+				const w = `authors[${i}]`;
+				if (!a || typeof a !== 'object' || Array.isArray(a)) return r(`${w} must be an object with a "name"`);
+				for (const k of Object.keys(a)) if (!AUTHOR_KEYS.includes(k)) r(`${w}: unknown key "${k}" (allowed: ${AUTHOR_KEYS.join(', ')})`);
+				if (typeof a.name !== 'string' || !a.name.trim() || a.name.length > 80) r(`${w}: "name" must be a short non-empty string`);
+				if ('url' in a && (typeof a.url !== 'string' || !HTTPS_URL_RE.test(a.url) || a.url.length > 200)) r(`${w}: "url" must be an https:// link`);
+				if ('did' in a && (typeof a.did !== 'string' || !DID_RE.test(a.did))) r(`${w}: "did" must be a did:plc: or did:web: identifier`);
+			});
+		}
+	}
+	if ('license' in reg && !LICENSES.includes(reg.license)) r(`"license" must be one of ${LICENSES.join(', ')}`);
+	if ('repository' in reg && (typeof reg.repository !== 'string' || !HTTPS_URL_RE.test(reg.repository) || reg.repository.length > 200)) {
+		r('"repository" must be an https:// link');
+	}
 
 	// fields
 	const columns = new Map();

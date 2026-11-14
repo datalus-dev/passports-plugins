@@ -39,6 +39,7 @@ describe('the National Parks plugin', () => {
 describe('cards', () => {
 	it('may not import anything but svelte', () => hasError(withCard((s) => `<script>\nimport x from '$lib/secrets';\n${s.replace('<script>', '')}`), 'imports "$lib/secrets"'));
 	it('may import svelte', () => expect(withCard((s) => s.replace('<script>', `<script>\n\timport { untrack } from 'svelte';`))).toEqual([]));
+	it('may not import the card library (it imports cards from here)', () => hasError(withCard((s) => s.replace('<script>', `<script>\n\timport { StateStamp } from 'passports-cards';`)), 'imports "passports-cards"'));
 	it('may not fetch', () => hasError(withCard((s) => s.replace('</script>', 'fetch("/x");\n</script>')), 'uses `fetch`'));
 	it('may not touch window or document', () => hasError(withCard((s) => s.replace('</script>', 'const d = document.cookie;\n</script>')), 'uses `document`'));
 	it('may not use dynamic import', () => hasError(withCard((s) => s.replace('</script>', 'import("x");\n</script>')), 'dynamic import()'));
@@ -54,6 +55,22 @@ describe('cards', () => {
 	it('must parse', () => hasError(withCard(() => '<div>{#if}</div>'), 'does not parse'));
 	it('must be listed in entrySlugs', () => hasError(check(({ write }) => write('cards/extra.svelte', '<script>let { title } = $props();</script>{title}')), 'not listed in "entrySlugs"'));
 	it('must exist for each entry slug', () => hasError(withRegistry((s) => s.replace("['national_park_stamp']", "['national_park_stamp', 'missing_card']")), 'no cards/missing_card.svelte'));
+});
+
+describe('the manifest', () => {
+	const without = (key) => withRegistry((s) => s.replace(new RegExp(`\\t${key}:[^\\n]*\\n`), ''));
+	it('needs authors', () => hasError(without('authors'), 'missing "authors"'));
+	it('needs a license', () => hasError(without('license'), 'missing "license"'));
+	it('may list an author with a link and a DID', () =>
+		expect(withRegistry((s) => s.replace("{ name: 'Teon L. Brooks', url: 'https://teonbrooks.com' }", "{ name: 'Teon', url: 'https://teonbrooks.com', did: 'did:plc:abc123' }, { name: 'Ada' }"))).toEqual([]));
+	it('may name a repository', () => expect(withRegistry((s) => s.replace("license: 'MIT',", "license: 'MIT',\n\trepository: 'https://tangled.org/x/y',"))).toEqual([]));
+	it('needs at least one author', () => hasError(withRegistry((s) => s.replace(/authors: \[[^\n]*\],/, 'authors: [],')), '"authors" must be a list'));
+	it('rejects an author without a name', () => hasError(withRegistry((s) => s.replace("name: 'Teon L. Brooks', ", '')), 'authors[0]: "name"'));
+	it('rejects an unknown author key', () => hasError(withRegistry((s) => s.replace("{ name: 'Teon L. Brooks',", "{ email: 'a@b.c', name: 'Teon L. Brooks',")), 'unknown key "email"'));
+	it('rejects an http author link', () => hasError(withRegistry((s) => s.replace('https://teonbrooks.com', 'http://teonbrooks.com')), '"url" must be an https://'));
+	it('rejects a bad DID', () => hasError(withRegistry((s) => s.replace("url: 'https://teonbrooks.com'", "url: 'https://teonbrooks.com', did: 'bob'")), '"did" must be'));
+	it('rejects a license that is not on the list', () => hasError(withRegistry((s) => s.replace("'MIT'", "'GPL-3.0-only'")), '"license" must be one of'));
+	it('rejects a non-https repository', () => hasError(withRegistry((s) => s.replace("license: 'MIT',", "license: 'MIT',\n\trepository: 'git@x.test:y',")), '"repository" must be an https://'));
 });
 
 describe('registry.ts', () => {
