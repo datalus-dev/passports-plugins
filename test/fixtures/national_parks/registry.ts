@@ -12,7 +12,7 @@ export default {
 	dateFields: ['visit_date'],
 
 	// The manifest: who made it and under what terms (credited wherever the passport is shown).
-	authors: [{ name: 'Teon L. Brooks', url: 'https://teonbrooks.com' }],
+	authors: [{ name: 'Teon L. Brooks', url: 'https://teonbrooks.com', did: 'did:plc:yl7wcldipsfnjdww2jg5mnrv' }],
 	license: 'MIT',
 
 	// Each field is a column in the passport's table, a control in the add and edit forms, and (with `card`)

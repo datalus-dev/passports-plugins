@@ -26,11 +26,25 @@ import {
 	FORBIDDEN_ELEMENTS,
 	FORBIDDEN_IDENTIFIERS,
 	FORBIDDEN_SVELTE_NODES,
+	DERIVE_KEYS,
+	FILTER_KEYS,
+	FILTER_TYPES,
 	LIMITS,
+	MAX_FILTERS,
+	NSID_RE,
+	PLACE_CATEGORY_RE,
+	PLOT_KEYS,
+	PLOT_KINDS,
+	PLOT_SLUG_RE,
 	PLUGIN_FILES,
+	RECORD_PATH_RE,
 	REGISTRY_KEYS,
 	REQUIRED_REGISTRY_KEYS,
 	SLUG_RE,
+	SOURCE_KEYS,
+	SOURCE_KINDS,
+	SOURCE_TYPES,
+	SOURCE_VALUE_KEYS,
 	STANDARD_COLUMNS,
 	TABLE_RE
 } from './lib/spec.mjs';
@@ -244,6 +258,129 @@ export function validatePlugin(dir, { reserved = [] } = {}) {
 		});
 		const props = reg.fields.map((f) => f?.card).filter(Boolean);
 		if (new Set(props).size !== props.length) r('two fields feed the same card prop');
+	}
+
+	// plots: charts the app draws with its own chart kinds, from columns of this passport's fields
+	if ('plots' in reg) {
+		if (!Array.isArray(reg.plots) || reg.plots.length === 0 || reg.plots.length > LIMITS.plots) {
+			r(`"plots" must be a list of 1 to ${LIMITS.plots} charts`);
+		} else {
+			const slugsSeen = new Set();
+			reg.plots.forEach((p, i) => {
+				const w = `plots[${i}]`;
+				if (!p || typeof p !== 'object' || Array.isArray(p)) return r(`${w} must be an object`);
+				for (const k of Object.keys(p)) if (!PLOT_KEYS.includes(k)) r(`${w}: unknown key "${k}" (allowed: ${PLOT_KEYS.join(', ')})`);
+				if (typeof p.slug !== 'string' || !PLOT_SLUG_RE.test(p.slug)) r(`${w}: "slug" must be lowercase letters, digits and underscores`);
+				else if (slugsSeen.has(p.slug)) r(`${w}: slug "${p.slug}" is used twice`);
+				else slugsSeen.add(p.slug);
+				if (!PLOT_KINDS.includes(p.kind)) r(`${w}: "kind" must be one of ${PLOT_KINDS.join(', ')}`);
+				if (typeof p.name !== 'string' || !p.name.trim() || p.name.length > 40) r(`${w}: "name" must be a short non-empty string`);
+				if ('title' in p && (typeof p.title !== 'string' || !p.title.trim() || p.title.length > 60)) r(`${w}: "title" must be a short non-empty string`);
+				if ('pin' in p && (typeof p.pin !== 'string' || !p.pin.trim() || p.pin.length > 16)) r(`${w}: "pin" must be one emoji`);
+				if ('size' in p && p.size !== 'full' && p.size !== 'half') r(`${w}: "size" must be "full" or "half"`);
+				const column = (prop, types) => {
+					if (!(prop in p)) return false;
+					const f = columns.get(p[prop]);
+					if (!f) r(`${w}: "${prop}" names ${JSON.stringify(p[prop])}, which is not a field`);
+					else if (!types.includes(f.type)) r(`${w}: "${prop}" must be a ${types.join(' or ')} field, but "${p[prop]}" is ${f.type}`);
+					return true;
+				};
+				if (!column('lat', ['number'])) r(`${w}: needs "lat"`);
+				if (!column('lon', ['number'])) r(`${w}: needs "lon"`);
+				column('label', ['text', 'longtext', 'select']);
+				column('sublabel', ['text', 'longtext', 'select']);
+				column('date', ['date']);
+			});
+		}
+	}
+
+	// filters: columns the entries can be narrowed by; the app draws the dropdowns
+	if ('filters' in reg) {
+		if (!Array.isArray(reg.filters) || reg.filters.length === 0 || reg.filters.length > MAX_FILTERS) r(`"filters" must be a list of 1 to ${MAX_FILTERS} filters`);
+		else {
+			const filtered = new Set();
+			reg.filters.forEach((f, i) => {
+				const w = `filters[${i}]`;
+				if (!f || typeof f !== 'object' || Array.isArray(f)) return r(`${w} must be an object`);
+				for (const k of Object.keys(f)) if (!FILTER_KEYS.includes(k)) r(`${w}: unknown key "${k}" (allowed: ${FILTER_KEYS.join(', ')})`);
+				const field = columns.get(f.column);
+				if (!field) r(`${w}: "${f.column}" is not a field`);
+				else if (!FILTER_TYPES.includes(field.type)) r(`${w}: "${f.column}" must be a ${FILTER_TYPES.join(', ')} field, but is ${field.type}`);
+				else if (filtered.has(f.column)) r(`${w}: "${f.column}" is filtered twice`);
+				filtered.add(f.column);
+				if (typeof f.label !== 'string' || !f.label.trim() || f.label.length > 30) r(`${w}: "label" must be a short non-empty string`);
+				if ('default' in f && (typeof f.default !== 'string' || !f.default.trim() || f.default.length > 60)) r(`${w}: "default" must be a short non-empty string`);
+				if ('options' in f) {
+					const entries = f.options && typeof f.options === 'object' && !Array.isArray(f.options) ? Object.entries(f.options) : null;
+					if (!entries || entries.length === 0 || entries.length > 30 || !entries.every(([v, l]) => v.trim() && v.length <= 60 && typeof l === 'string' && l.trim() && l.length <= 40)) {
+						r(`${w}: "options" must be 1 to 30 value: label pairs of short text`);
+					}
+				}
+			});
+		}
+	}
+
+	// source: where the entries come from when the owner doesn't type them in (the app reads, maps and mirrors them)
+	if ('source' in reg) {
+		const s = reg.source;
+		const w = 'source';
+		if (!s || typeof s !== 'object' || Array.isArray(s)) r('"source" must be an object');
+		else {
+			for (const k of Object.keys(s)) if (!SOURCE_KEYS.includes(k)) r(`${w}: unknown key "${k}" (allowed: ${SOURCE_KEYS.join(', ')})`);
+			if (!SOURCE_KINDS.includes(s.kind)) r(`${w}: "kind" must be one of ${SOURCE_KINDS.join(', ')}`);
+			if (typeof s.collection !== 'string' || !NSID_RE.test(s.collection)) r(`${w}: "collection" must be an NSID like app.example.thing`);
+			// A mapped column is one of the passport's own fields; the host sets id, user_id and the atproto columns.
+			const column = (where, c) => {
+				if (!columns.has(c)) r(`${where}: "${c}" is not a field`);
+			};
+			const mapped = s.map && typeof s.map === 'object' && !Array.isArray(s.map) ? Object.entries(s.map) : null;
+			if (!mapped || mapped.length === 0 || mapped.length > LIMITS.sourceColumns) r(`${w}: "map" must list 1 to ${LIMITS.sourceColumns} columns`);
+			else {
+				for (const [c, v] of mapped) {
+					const where = `${w}.map.${c}`;
+					column(where, c);
+					const entry = typeof v === 'string' ? { path: v } : v;
+					if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+						r(`${where} must be a record path, or { path, default, type }`);
+						continue;
+					}
+					for (const k of Object.keys(entry)) if (!SOURCE_VALUE_KEYS.includes(k)) r(`${where}: unknown key "${k}"`);
+					if (typeof entry.path !== 'string' || !RECORD_PATH_RE.test(entry.path)) r(`${where}: "path" must be a dotted record path like location.latitude`);
+					if ('type' in entry && !SOURCE_TYPES.includes(entry.type)) r(`${where}: "type" must be one of ${SOURCE_TYPES.join(', ')}`);
+					if ('of' in entry && (entry.type !== 'blobs' || typeof entry.of !== 'string' || !RECORD_PATH_RE.test(entry.of))) r(`${where}: "of" is a dotted path inside each item, and only for type blobs`);
+					// A blob column holds a link (or a JSON list of links) as text.
+					if ((entry.type === 'blob' || entry.type === 'blobs') && columns.has(c) && !['text', 'longtext'].includes(columns.get(c).type)) r(`${where}: a ${entry.type} column must be a text field, but "${c}" is ${columns.get(c).type}`);
+					if ('default' in entry && entry.default !== null && typeof entry.default !== 'string' && typeof entry.default !== 'number') r(`${where}: "default" must be text or a number`);
+				}
+			}
+			const deriveIsObject = s.derive && typeof s.derive === 'object' && !Array.isArray(s.derive);
+			if ('derive' in s && !deriveIsObject) r(`${w}: "derive" must be an object`);
+			const derived = deriveIsObject ? Object.entries(s.derive) : [];
+			for (const [c, rule] of derived) {
+				const where = `${w}.derive.${c}`;
+				column(where, c);
+				if (s.map && c in s.map) r(`${where}: is also in "map"`);
+				if (!rule || typeof rule !== 'object' || Array.isArray(rule)) {
+					r(`${where} must be { when, equals, then, else }`);
+					continue;
+				}
+				for (const k of Object.keys(rule)) if (!DERIVE_KEYS.includes(k)) r(`${where}: unknown key "${k}"`);
+				if (typeof rule.when !== 'string' || !RECORD_PATH_RE.test(rule.when)) r(`${where}: "when" must be a dotted record path`);
+				for (const k of ['equals', 'then', 'else']) if (typeof rule[k] !== 'string') r(`${where}: "${k}" must be text`);
+			}
+			if ('place' in s) {
+				const p = s.place;
+				const where = `${w}.place`;
+				if (!p || typeof p !== 'object' || Array.isArray(p)) r(`${where} must be { column, from, category }`);
+				else {
+					for (const k of Object.keys(p)) if (!['column', 'from', 'category'].includes(k)) r(`${where}: unknown key "${k}"`);
+					column(where, p.column);
+					if (s.map && p.column in s.map) r(`${where}: "${p.column}" is also in "map"`);
+					if (!((s.map && p.from in s.map) || (s.derive && p.from in s.derive))) r(`${where}: "from" must be a mapped column, but "${p.from}" is not`);
+					if (typeof p.category !== 'string' || !PLACE_CATEGORY_RE.test(p.category)) r(`${where}: "category" must be a plain name like venue`);
+				}
+			}
+		}
 	}
 
 	// dateFields must be exactly the date columns
