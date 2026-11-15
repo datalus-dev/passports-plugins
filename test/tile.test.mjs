@@ -3,8 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import CarTileReader from '@dasl/tile-car-reader';
+import { masl } from '@dasl/tile-lexicon';
 import { buildTile } from '../scripts/build-tile.mjs';
-import { DEFAULT_TILE_SIZE, checkTileManifest, formatTileDate, payloadToProps, tileManifest } from '../scripts/lib/tile.mjs';
+import { DEFAULT_TILE_SIZE, SIZING_FITS, TILE_LIMITS, checkTileManifest, formatTileDate, payloadToProps, tileManifest } from '../scripts/lib/tile.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'national_parks');
@@ -73,8 +75,14 @@ describe('the tile manifest', () => {
 		expect(tileManifest(registry, { cardName: 'Stamp', ...DEFAULT_TILE_SIZE })).toEqual({
 			name: 'National Parks: Stamp',
 			description: 'Log your visits to national parks.',
-			sizing: { width: 176, height: 200 }
+			sizing: { width: 176, height: 200, fit: 'both' }
 		});
+	});
+	it('can ask the host not to follow the card\'s content', () =>
+		expect(tileManifest(registry, { cardName: 'C', width: 10, height: 20, fit: 'none' }).sizing).toEqual({ width: 10, height: 20, fit: 'none' }));
+	it('takes its limits from the published lexicon', () => {
+		expect(TILE_LIMITS).toEqual({ name: masl.defs.masl.properties.name.maxGraphemes, description: masl.defs.masl.properties.description.maxGraphemes });
+		expect(TILE_LIMITS).toEqual({ name: 100, description: 300 });
 	});
 	it('leaves out a description the passport lacks', () => expect('description' in tileManifest({ name: 'X' }, { cardName: 'C', width: 1, height: 1 })).toBe(false));
 	it('keeps a long name and description within the spec by cutting at a whole character', () => {
@@ -93,10 +101,26 @@ describe('the tile manifest', () => {
 		expect(checkTileManifest({ name: '🌳'.repeat(101) }).join()).toContain('name is longer than 100');
 		expect(checkTileManifest({ name: 'A', description: 'x'.repeat(301) }).join()).toContain('description must be text of at most 300');
 	});
-	it('needs both sizes, as whole numbers of at least 1', () => {
-		for (const sizing of [{ width: 10 }, { height: 10 }, { width: 0, height: 5 }, { width: 5.5, height: 5 }, { width: '5', height: 5 }, null]) {
-			expect(checkTileManifest({ name: 'A', sizing }).join()).toContain('sizing needs');
+	it('passes a manifest that asks only to follow its content, since every size is a wish', () => {
+		expect(checkTileManifest({ name: 'A', sizing: { fit: 'both' } })).toEqual([]);
+		expect(checkTileManifest({ name: 'A', sizing: { width: 100 } })).toEqual([]);
+		expect(checkTileManifest({ name: 'A', sizing: { minWidth: 50, maxWidth: 400, minHeight: 50, maxHeight: 400, width: 100, height: 100, fit: 'none' } })).toEqual([]);
+	});
+	it('needs each size it gives to be a whole number of at least 1', () => {
+		for (const key of ['width', 'height', 'minWidth', 'maxHeight']) {
+			for (const bad of [0, -3, 5.5, '5', null]) expect(checkTileManifest({ name: 'A', sizing: { [key]: bad } }).join()).toContain(`sizing.${key} must be a whole number`);
 		}
+	});
+	it('limits fit to the values the spec has', () => {
+		for (const fit of SIZING_FITS) expect(checkTileManifest({ name: 'A', sizing: { fit } })).toEqual([]);
+		expect(checkTileManifest({ name: 'A', sizing: { fit: 'always' } }).join()).toContain('sizing.fit must be one of');
+	});
+	it('refuses a size key the spec does not have, and a minimum above its maximum', () => {
+		expect(checkTileManifest({ name: 'A', sizing: { depth: 3 } }).join()).toContain('unknown key "depth"');
+		expect(checkTileManifest({ name: 'A', sizing: { minWidth: 500, maxWidth: 100 } }).join()).toContain('sizing.minWidth is larger than sizing.maxWidth');
+	});
+	it('needs sizing to be an object', () => {
+		for (const sizing of [null, 'big', []]) expect(checkTileManifest({ name: 'A', sizing }).join()).toContain('sizing must be an object');
 	});
 	it('rejects what is not an object', () => expect(checkTileManifest([])).toEqual(['manifest must be an object']));
 });
@@ -115,7 +139,7 @@ describe('buildTile', () => {
 		const res = await buildTile(plugin(), { out });
 		expect(res.files).toEqual(['app.js', 'index.html', 'manifest.json']);
 		const manifest = JSON.parse(fs.readFileSync(path.join(out, 'manifest.json'), 'utf8'));
-		expect(manifest).toEqual({ name: 'National Parks: National park stamp', description: 'Log your visits to national parks.', sizing: DEFAULT_TILE_SIZE });
+		expect(manifest).toEqual({ name: 'National Parks: National park stamp', description: 'Log your visits to national parks.', sizing: { ...DEFAULT_TILE_SIZE, fit: 'both' } });
 		expect(checkTileManifest(manifest)).toEqual([]);
 		const html = fs.readFileSync(path.join(out, 'index.html'), 'utf8');
 		expect(html).toContain('<script src="app.js"></script>');
@@ -130,13 +154,46 @@ describe('buildTile', () => {
 		expect(js).toContain('Sep 14, 2024');
 		expect(js).toContain('Acadia National Park');
 		expect(js).toContain('/.well-known/web-tiles/data.js');
+		expect(js).toContain('max-content'); // the root is sized to the card, so a host that follows the card's size gets its width
 		expect(js).not.toMatch(/localStorage|sessionStorage|indexedDB|XMLHttpRequest|new WebSocket|\bfetch\(/);
 	}, 60_000);
 
 	it('asks to be shown at the size it is given', async () => {
 		const out = path.join(tmp, 'out-c');
 		await buildTile(plugin(), { out, size: { width: 300, height: 400 } });
-		expect(JSON.parse(fs.readFileSync(path.join(out, 'manifest.json'), 'utf8')).sizing).toEqual({ width: 300, height: 400 });
+		expect(JSON.parse(fs.readFileSync(path.join(out, 'manifest.json'), 'utf8')).sizing).toEqual({ width: 300, height: 400, fit: 'both' });
+	}, 60_000);
+
+	it('packs a .tile that a tile reader opens: the page is the root, the script is a resource, the manifest is not', async () => {
+		const out = path.join(tmp, 'out-pack');
+		const res = await buildTile(plugin(), { out, pack: true });
+		expect(res.tilePath).toBe(`${out}.tile`);
+		const reader = new CarTileReader(res.tilePath);
+		await reader.open();
+		try {
+			expect(reader.meta.name).toBe('National Parks: National park stamp');
+			expect(reader.meta.sizing).toEqual({ ...DEFAULT_TILE_SIZE, fit: 'both' });
+			const root = reader.resolvePath('/');
+			expect(root.ok).toBe(true);
+			expect(root.headers['content-type']).toBe('text/html');
+			const read = async (r) => { const chunks = []; for await (const c of r.createReadStream()) chunks.push(c); return Buffer.concat(chunks); };
+			expect((await read(root)).equals(fs.readFileSync(path.join(out, 'index.html')))).toBe(true);
+			const js = reader.resolvePath('/app.js');
+			expect(js.ok).toBe(true);
+			expect(js.headers['content-type']).toBe('text/javascript');
+			expect((await read(js)).equals(fs.readFileSync(path.join(out, 'app.js')))).toBe(true);
+			expect(reader.resolvePath('/manifest.json').ok).toBe(false);
+			expect(reader.resolvePath('/nope').status).toBe(404);
+		} finally {
+			reader.close();
+		}
+	}, 60_000);
+
+	it('writes no .tile unless asked', async () => {
+		const out = path.join(tmp, 'out-nopack');
+		const res = await buildTile(plugin(), { out });
+		expect(res.tilePath).toBeUndefined();
+		expect(fs.existsSync(`${out}.tile`)).toBe(false);
 	}, 60_000);
 
 	it('can be built again over its own output', async () => {

@@ -15,6 +15,9 @@
 		"tile": "node scripts/build-tile.mjs"
 	},
 	"devDependencies": {
+		"@dasl/tile-car-reader": "^2.0.0",
+		"@dasl/tile-lexicon": "^2.2.0",
+		"@dasl/tile-writer": "^2.0.0",
 		"@sveltejs/vite-plugin-svelte": "^7.3.1",
 		"svelte": "^5.57.1",
 		"typescript": "^6.0.3",
