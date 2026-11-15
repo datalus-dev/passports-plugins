@@ -129,16 +129,18 @@ Any card can also be built as a [Web Tile](https://dasl.ing/tiles.html): a small
 ```
 npm run tile -- passports/national_parks                  # the first card, into dist-tiles/national_parks/<card>/
 npm run tile -- passports/national_parks --card <entry>   # another card
-npm run tile -- passports/national_parks --size 176x200   # the size the tile asks its host to show it at
+npm run tile -- passports/national_parks --pack           # also write <card>.tile, a file any tile reader opens
+npm run tile -- passports/national_parks --size 176x200   # the size the card is designed for
+npm run tile -- passports/national_parks --fit none       # don't ask the host to follow the card's size
 ```
 
 The passport has to pass `npm run validate` first. You get a folder of `index.html`, `app.js` and `manifest.json`:
 
 - **Until a host sends data** the tile shows the first entry of your `sample.json`.
 - **A host sends an entry or props** over the data-passing protocol (`/.well-known/web-tiles/data.js`): either an entry keyed by your columns (`{ park_name: 'Acadia', visit_date: '2024-09-14' }`, with dates shown as text like the app does) or the card's own props (`{ title: 'Acadia', date: 'Sep 14, 2024' }`). Each one replaces what is shown, so send a whole entry. Anything that isn't plain text, a number or a boolean, and any key that is neither a column with a `card` prop nor a card prop, is ignored.
-- **The manifest** carries a name (the passport's and the card's), the passport's description and the size. It has no `resources` list and no author or license: the tools that pack a tile fill in the former, and a tile manifest has no field for the latter.
+- **The manifest** carries a name (the passport's and the card's), the passport's description and a size. The size is a wish a host may ignore: `width` and `height` are what the card is designed for, and `fit: 'both'` (the default) asks a host that supports size negotiation to follow the card's own size, which the tile's root is sized to report. It has no `resources` list and no author or license: the tools that pack a tile fill in the former, and a tile manifest has no field for the latter.
 
-To pack or publish the folder, use the DASL tools (`npx @dasl/atile bundle <folder> <name>.tile`, or `atile publish -s <folder>`); this repo doesn't run them. A tile published to someone's repository is public to anyone who can read it, so publish only entries the owner has made public.
+`--pack` writes the `.tile` with `@dasl/tile-writer`. To publish the folder to an Atmosphere account, use `npx @dasl/atile publish -s <folder>`; this repo doesn't run it. A tile published to someone's repository is public to anyone who can read it, so publish only entries the owner has made public.
 
 ## What is not supported yet
 

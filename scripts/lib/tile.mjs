@@ -1,79 +1,46 @@
-// Web Tiles (https://dasl.ing/tiles.html): a card built as a tile is a small web page that carries everything it needs,
-// has no network, and gets its data from whatever embeds it over the data-passing protocol (tp-data). This file is what
-// the build and the tile itself share: the payload → card props mapping (it runs inside the tile, so no Node APIs
-// here) and the checks on the manifest the build writes (it runs in the build).
+// The build side of a Web Tile (https://dasl.ing/tiles.html): the manifest a tile's source folder carries and the
+// checks on it. The limits come from the `ing.dasl.masl` lexicon that DASL publishes (@dasl/tile-lexicon), so they
+// can't drift from the spec. What runs inside the tile itself is in tile-runtime.mjs.
 
-const SAFE_KEY = /^[A-Za-z_][A-Za-z0-9_]{0,40}$/;
-const MAX_TEXT = 2000;
+import { masl } from '@dasl/tile-lexicon';
 
-/** "2024-09-14" → "Sep 14, 2024"; the date is read as written, with no time zone shift. Anything else comes back as it is. */
-export function formatTileDate(value) {
-	const m = typeof value === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null;
-	if (!m) return value;
-	const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-	if (Number.isNaN(d.getTime()) || d.getUTCMonth() !== Number(m[2]) - 1) return value;
-	return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
-}
+export { formatTileDate, payloadToProps } from './tile-runtime.mjs';
 
-/** What a card may be given: plain text, numbers and booleans. Anything else a host sends (objects, functions) is dropped. */
-function plain(value) {
-	if (typeof value === 'string') return value.length > MAX_TEXT ? value.slice(0, MAX_TEXT) : value;
-	if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-	if (typeof value === 'boolean') return value;
-	return null;
-}
+const properties = masl.defs.masl.properties;
+const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+const graphemes = (s) => [...segmenter.segment(s)].length;
 
-/**
- * The card's props for what a host sent. A payload is either an entry, keyed by the passport's columns
- * (`{ park_name: 'Acadia', visit_date: '2024-09-14' }`), or the card's props themselves (`{ title: 'Acadia' }`); keys of
- * both kinds can be mixed, and a column wins over a prop of the same name. A `date` column is shown as text, like the
- * app does. Keys that are neither a column nor a card prop, and values that aren't plain, are ignored.
- *
- * @param {{ column: string, type: string, card?: string }[]} fields  the passport's `fields`
- * @param {unknown} payload
- * @returns {Record<string, string | number | boolean>}
- */
-export function payloadToProps(fields, payload) {
-	const props = {};
-	if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return props;
-	const cardProps = new Set(fields.map((f) => f.card).filter(Boolean));
-	const entry = /** @type {Record<string, unknown>} */ (payload);
-	for (const key of Object.keys(entry)) {
-		if (!SAFE_KEY.test(key) || !cardProps.has(key)) continue;
-		const v = plain(entry[key]);
-		if (v != null && v !== '') props[key] = v;
-	}
-	for (const f of fields) {
-		if (!f.card || !Object.hasOwn(entry, f.column)) continue;
-		const v = plain(entry[f.column]);
-		if (v == null || v === '') delete props[f.card];
-		else props[f.card] = f.type === 'date' ? formatTileDate(v) : v;
-	}
-	return props;
-}
+/** The longest a tile's name and description may be, in characters, from the lexicon. */
+export const TILE_LIMITS = { name: properties.name.maxGraphemes, description: properties.description.maxGraphemes };
 
-// ── the manifest ───────────────────────────────────────────────────────────────────────────────────────
+/** Which of a tile's dimensions follow its content, measured by the host (tp-size). */
+export const SIZING_FITS = ['none', 'width', 'height', 'both'];
+const SIZING_KEYS = ['width', 'height', 'minWidth', 'minHeight', 'maxWidth', 'maxHeight', 'fit'];
 
-const graphemes = (s) => [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(s)].length;
+/** The size a card asks for when the author doesn't say: the card's box plus room for its shadow, and to follow its content. */
+export const DEFAULT_TILE_SIZE = { width: 176, height: 200 };
+export const DEFAULT_TILE_FIT = 'both';
 
-export const TILE_LIMITS = { name: 100, description: 300 };
+const clip = (s, max) => (graphemes(s) <= max ? s : [...segmenter.segment(s)].slice(0, max - 1).map((x) => x.segment).join('') + '…');
 
 /**
  * The manifest a tile's source folder carries (manifest.json beside index.html). `resources` isn't in it: the tools
- * that pack the tile (`atile bundle`) fill it in from the folder's files.
+ * that pack a tile (`atile`, or @dasl/tile-writer here) fill it in from the folder's files.
+ *
+ * The size is a wish a host may ignore: `width` and `height` are what the card is designed for, and `fit` asks a host
+ * that supports size negotiation to follow the card's content instead.
  *
  * @param {{ name: string, description?: string }} registry
- * @param {{ cardName: string, width: number, height: number }} opts
+ * @param {{ cardName: string, width: number, height: number, fit?: string }} opts
  */
-export function tileManifest(registry, { cardName, width, height }) {
-	const clip = (s, max) => (graphemes(s) <= max ? s : [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(s)].slice(0, max - 1).map((x) => x.segment).join('') + '…');
+export function tileManifest(registry, { cardName, width, height, fit = DEFAULT_TILE_FIT }) {
 	const manifest = { name: clip(`${registry.name}: ${cardName}`, TILE_LIMITS.name) };
 	if (registry.description) manifest.description = clip(registry.description, TILE_LIMITS.description);
-	manifest.sizing = { width, height };
+	manifest.sizing = { width, height, fit };
 	return manifest;
 }
 
-/** Every problem with a tile manifest against the spec's limits (the `ing.dasl.masl` lexicon). Empty when it is fine. */
+/** Every problem with a tile manifest against the spec (the lexicon's limits and tp-size's sizing). Empty when it is fine. */
 export function checkTileManifest(m) {
 	const problems = [];
 	if (!m || typeof m !== 'object' || Array.isArray(m)) return ['manifest must be an object'];
@@ -84,11 +51,17 @@ export function checkTileManifest(m) {
 	}
 	if ('sizing' in m) {
 		const s = m.sizing;
-		const whole = (n) => Number.isInteger(n) && n >= 1;
-		if (!s || typeof s !== 'object' || !whole(s.width) || !whole(s.height)) problems.push('sizing needs a width and a height, both whole numbers of at least 1');
+		if (!s || typeof s !== 'object' || Array.isArray(s)) problems.push('sizing must be an object');
+		else {
+			for (const k of Object.keys(s)) if (!SIZING_KEYS.includes(k)) problems.push(`sizing has an unknown key "${k}"`);
+			for (const k of SIZING_KEYS.filter((k) => k !== 'fit' && k in s)) {
+				if (!Number.isInteger(s[k]) || s[k] < 1) problems.push(`sizing.${k} must be a whole number of at least 1`);
+			}
+			if ('fit' in s && !SIZING_FITS.includes(s.fit)) problems.push(`sizing.fit must be one of ${SIZING_FITS.join(', ')}`);
+			for (const [lo, hi] of [['minWidth', 'maxWidth'], ['minHeight', 'maxHeight']]) {
+				if (Number.isInteger(s[lo]) && Number.isInteger(s[hi]) && s[lo] > s[hi]) problems.push(`sizing.${lo} is larger than sizing.${hi}`);
+			}
+		}
 	}
 	return problems;
 }
-
-/** The size a card is shown at when the author doesn't say: the card's box plus room for its shadow. */
-export const DEFAULT_TILE_SIZE = { width: 176, height: 200 };
