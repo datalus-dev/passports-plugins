@@ -1,6 +1,6 @@
 # Contributing a passport
 
-A passport is a folder under `passports/<slug>/` with three things: `registry.ts`, `sample.json` and one or more cards in `cards/`. Nothing else goes in it.
+A passport is a folder under `passports/<slug>/` with three things: `registry.ts`, `sample.json` and one or more cards in `cards/`. Nothing else goes in it, except a `data/` folder of `.csv` files when the passport has datasets.
 
 ## How a passport gets into the app
 
@@ -27,6 +27,7 @@ One `export default { … }` made only of plain values (strings, numbers, true, 
 | `hasVisibility` | `true`. |
 | `dateFields` | Exactly the columns whose field type is `date`. |
 | `fields` | The columns, below. |
+| `datasets` | Optional; read-only lists the passport ships for its owners to pick from, below. |
 | `authors`, `license` | Who made it and under what terms, below. Required. |
 | `repository` | Optional; an `https://` link to where it lives. |
 | `plots` | Optional; charts the app draws from your entries, below. |
@@ -57,9 +58,40 @@ Each field is a column in the passport's table, a control in the add and edit fo
 ```
 
 - `column`: lowercase letters, digits and underscores. Not one of the standard columns (`id`, `user_id`, `visibility`, `note`, `image_paths`, `entry_source`, `created_at`, `updated_at`, `atproto_*`).
-- `type`: `text`, `longtext`, `date`, `number` or `select` (a `select` also needs `options`, a list of strings).
+- `type`: `text`, `longtext`, `date`, `number`, `select` (needs `options`, a list of strings) or `lookup` (needs `dataset`; see `datasets` below).
 - `required`: optional; `true` makes the form require it.
 - `card`: optional; the name of the card prop this column feeds.
+
+### `datasets` and `lookup` fields
+
+A dataset is a list the passport ships for its owners to pick from: the 64 National Parks, say. You put it in a `.csv` file in the passport's own `data/` folder and describe it in `datasets`. A `lookup` field then lets the owner search the list and pick one row.
+
+```ts
+datasets: [{
+  slug: 'parks',
+  file: 'data/parks.csv',
+  key: 'name',
+  columns: [{ column: 'code' }, { column: 'name' }, { column: 'label' }, { column: 'state' }],
+  credit: { name: 'nps.gov', url: 'https://www.nps.gov/aboutus/national-park-system.htm', note: 'Public domain' }
+}],
+fields: [
+  { column: 'park_name', label: 'Park', type: 'lookup', required: true, dataset: 'parks', show: 'label', sub: 'state',
+    find: ['label', 'name', 'code', 'state'], fill: { park_code: 'code', park_label: 'label' } },
+  { column: 'park_code', label: 'Park code', type: 'text', card: 'code' },
+  { column: 'park_label', label: 'Park label', type: 'text', card: 'title' }
+]
+```
+
+A dataset is yours alone: it lives in your folder, its table is named `<slug>_<dataset>` (here `national_parks_parks`), and a lookup can only use a dataset of the same passport. The table is read-only, filled when the app's migration runs, and the app keeps a copy on the device, so the picker works offline.
+
+- `slug`: lowercase letters, digits and underscores. `file`: a `data/<name>.csv` path inside your folder; no other path is accepted.
+- `columns`: one to six, all text. `key`: the column whose value is stored on an entry and that identifies a row; it is unique and never empty.
+- `credit`: required. `name` and an `https://` `url` say where the data comes from; `note` is optional short text such as "Public domain". It is not a license field.
+- The csv's first line is the column names, in the order you list them. Commas, quotes and rows only: a cell can't span lines, hold `<` or `>`, or be longer than 200 characters. At most 1000 rows and 100 KB.
+- A `lookup` field stores the picked row's `key`. `show` is the column the picker writes for each row (default: the key), `sub` a second line, and `find` the columns the box searches (default: all).
+- `fill` copies columns of the picked row into other `text` fields of the entry, so a card can use them. The form doesn't show a field that is filled this way, and each field is filled by one lookup.
+
+Keep the key as the source spelling (NPS writes `Hawai'i`), and put the spelling you want shown in another column (`label`).
 
 ### `plots`
 
@@ -70,11 +102,24 @@ plots: [{ slug: 'park_map', kind: 'map', name: 'Map', lat: 'latitude', lon: 'lon
 ```
 
 - `slug`: lowercase letters, digits and underscores; unique in the passport.
-- `kind`: `map` (a flat world map) or `globe` (a globe the owner can spin). Both pin each entry that has a position.
+- `kind`: `map` (a flat world map), `globe` (a globe the owner can spin) or `progress` (how many of a dataset's rows the owner has picked, below). `map` and `globe` pin each entry that has a position.
 - `name`: what the "add a chart" list shows. `title`: optional heading; defaults to `name`.
 - `lat`, `lon`: required; `number` fields.
 - `label`, `sublabel`: optional; `text`, `longtext` or `select` fields shown in the tooltip. `date`: optional; a `date` field.
 - `pin`: optional; one emoji (default 📍). `size`: optional; `full` or `half`.
+
+A `progress` chart takes no position. It counts the distinct values the owner has picked in a lookup field, against the rows of that lookup's dataset, so a park visited twice counts once.
+
+```ts
+plots: [
+  { slug: 'park_ring', kind: 'progress', name: 'Progress ring', title: 'Parks visited', look: 'ring', count: 'park_name', of: 'parks', size: 'half' },
+  { slug: 'park_grid', kind: 'progress', name: 'Progress grid', title: 'Parks visited', look: 'grid', count: 'park_name', of: 'parks', label: 'code', sublabel: 'label', size: 'full' }
+]
+```
+
+- `look`: `ring` (a ring with the count in the middle) or `grid` (a slot for every row, filled when picked). A narrow panel draws a compact form of either, on its own.
+- `count`: the `lookup` field to count. `of`: that field's dataset.
+- `label`, `sublabel`: optional dataset columns: what a filled slot of the grid writes, and what shows when you point at a slot.
 
 ### `filters`
 

@@ -1,7 +1,9 @@
 // The rules a community passport must follow. Both CI here and the app's `plugins:sync` read this file,
 // so there is one place to change them.
 
-export const FIELD_TYPES = ['text', 'longtext', 'date', 'number', 'select'];
+export const FIELD_TYPES = ['text', 'longtext', 'date', 'number', 'select', 'lookup'];
+// What a field may say. `dataset`, `find`, `show`, `sub` and `fill` belong to a `lookup` field only.
+export const FIELD_KEYS = ['column', 'label', 'type', 'required', 'options', 'card', 'dataset', 'find', 'show', 'sub', 'fill'];
 
 // Columns every passport table gets; a plugin may not declare them as fields.
 export const STANDARD_COLUMNS = [
@@ -38,6 +40,7 @@ export const REGISTRY_KEYS = [
 	'hasVisibility',
 	'dateFields',
 	'fields',
+	'datasets',
 	'plots',
 	'filters',
 	'source',
@@ -49,8 +52,10 @@ export const REGISTRY_KEYS = [
 
 // Charts are declared, never contributed: the app draws each plot with one of its own chart kinds, so a passport
 // can have a map without any of its code running. Keep in step with src/lib/passport-plots.ts in the app.
-export const PLOT_KINDS = ['map', 'globe'];
-export const PLOT_KEYS = ['slug', 'kind', 'name', 'title', 'lat', 'lon', 'label', 'sublabel', 'date', 'pin', 'size'];
+export const PLOT_KINDS = ['map', 'globe', 'progress'];
+// A `progress` plot counts the distinct values of a lookup field against a dataset's rows, as a ring or a grid of slots.
+export const PROGRESS_LOOKS = ['ring', 'grid'];
+export const PLOT_KEYS = ['slug', 'kind', 'name', 'title', 'lat', 'lon', 'label', 'sublabel', 'date', 'pin', 'size', 'look', 'count', 'of'];
 // A source says where entries come from when the owner doesn't type them in; the app does the fetching, mapping and
 // mirroring into the passport's table, so no passport code runs. Keep in step with src/lib/passport-source.ts in the app.
 export const SOURCE_KINDS = ['pds'];
@@ -84,7 +89,7 @@ export const REQUIRED_REGISTRY_KEYS = [
 	'license'
 ];
 
-export const LIMITS = { fields: 20, plots: 6, sourceColumns: 20, authors: 10, selectOptions: 30, sample: 12, registryBytes: 20_000, cardBytes: 30_000, sampleBytes: 20_000 };
+export const LIMITS = { fields: 20, plots: 6, sourceColumns: 20, authors: 10, selectOptions: 30, sample: 12, registryBytes: 20_000, cardBytes: 30_000, sampleBytes: 20_000, datasets: 3, datasetColumns: 6, datasetRows: 1000, datasetBytes: 100_000, datasetCell: 200 };
 
 // The manifest: who made the passport and under what terms. Shown wherever the passport is credited.
 // A passport is copied into the app and published, so its license has to allow that; these are the permissive ones.
@@ -131,3 +136,12 @@ export const DAISY_CLASSES = [
 ];
 
 export const PLUGIN_FILES = ['registry.ts', 'sample.json'];
+
+// A dataset is a read-only list the passport ships next to its registry (a list of parks to pick from). Its file lives
+// in the passport's own data/ folder and nowhere else; its table is named <slug>_<dataset>, so it can't touch another
+// passport's tables. Keep in step with src/lib/passport-datasets.ts in the app.
+export const DATASET_KEYS = ['slug', 'file', 'key', 'columns', 'credit'];
+export const CREDIT_KEYS = ['name', 'url', 'note'];
+export const DATASET_SLUG_RE = /^[a-z][a-z0-9_]{1,24}$/;
+export const DATASET_FILE_RE = /^data\/[a-z0-9_-]{1,40}\.csv$/;
+export const DATA_DIR = 'data';

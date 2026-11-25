@@ -12,14 +12,21 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'svelte/compiler';
 import { parseRegistry } from './lib/registry-literal.mjs';
+import { parseCsv } from './lib/csv.mjs';
 import {
 	ALLOWED_IMPORTS,
 	AUTHOR_KEYS,
 	CARD_SLUG_RE,
 	COLUMN_RE,
+	CREDIT_KEYS,
 	DAISY_CLASSES,
+	DATA_DIR,
+	DATASET_FILE_RE,
+	DATASET_KEYS,
+	DATASET_SLUG_RE,
 	DATE_RE,
 	DID_RE,
+	FIELD_KEYS,
 	FIELD_TYPES,
 	HTTPS_URL_RE,
 	LICENSES,
@@ -37,6 +44,7 @@ import {
 	PLOT_KINDS,
 	PLOT_SLUG_RE,
 	PLUGIN_FILES,
+	PROGRESS_LOOKS,
 	RECORD_PATH_RE,
 	REGISTRY_KEYS,
 	REQUIRED_REGISTRY_KEYS,
@@ -173,9 +181,9 @@ export function validatePlugin(dir, { reserved = [] } = {}) {
 	// Layout: registry.ts, sample.json, cards/*.svelte and nothing else.
 	const entries = fs.readdirSync(dir, { withFileTypes: true });
 	for (const e of entries) {
-		if (e.isDirectory() && e.name === 'cards') continue;
+		if (e.isDirectory() && (e.name === 'cards' || e.name === DATA_DIR)) continue;
 		if (e.isFile() && PLUGIN_FILES.includes(e.name)) continue;
-		fail(`unexpected ${e.isDirectory() ? 'folder' : 'file'} "${e.name}" (a plugin has registry.ts, sample.json and cards/)`);
+		fail(`unexpected ${e.isDirectory() ? 'folder' : 'file'} "${e.name}" (a plugin has registry.ts, sample.json, cards/ and, if it has datasets, data/)`);
 	}
 	for (const f of PLUGIN_FILES) if (!fs.existsSync(path.join(dir, f))) fail(`missing ${f}`);
 	const cardsDir = path.join(dir, 'cards');
@@ -234,6 +242,85 @@ export function validatePlugin(dir, { reserved = [] } = {}) {
 		r('"repository" must be an https:// link');
 	}
 
+	// datasets: read-only lists the passport ships in its own data/ folder (a list of parks to pick from). Each one gets a
+	// table named <slug>_<dataset>, filled by the migration, and a copy the app bundles so a picker works offline.
+	const datasets = new Map();
+	const dataDir = path.join(dir, DATA_DIR);
+	const dataFiles = fs.existsSync(dataDir) ? fs.readdirSync(dataDir) : [];
+	for (const f of dataFiles) if (!f.endsWith('.csv')) fail(`data/${f}: only .csv files belong in data/`);
+	const usedFiles = new Set();
+	if ('datasets' in reg) {
+		if (!Array.isArray(reg.datasets) || reg.datasets.length === 0 || reg.datasets.length > LIMITS.datasets) r(`"datasets" must be a list of 1 to ${LIMITS.datasets} datasets`);
+		else {
+			reg.datasets.forEach((d, i) => {
+				const w = `datasets[${i}]`;
+				if (!d || typeof d !== 'object' || Array.isArray(d)) return r(`${w} must be an object`);
+				for (const k of Object.keys(d)) if (!DATASET_KEYS.includes(k)) r(`${w}: unknown key "${k}" (allowed: ${DATASET_KEYS.join(', ')})`);
+				if (typeof d.slug !== 'string' || !DATASET_SLUG_RE.test(d.slug)) return r(`${w}: "slug" must be lowercase letters, digits and underscores`);
+				if (datasets.has(d.slug)) return r(`${w}: slug "${d.slug}" is used twice`);
+				const table = `${slug}_${d.slug}`;
+				if (!TABLE_RE.test(table)) r(`${w}: the table name "${table}" is too long`);
+				if (table === reg.entryTable) r(`${w}: the table name "${table}" is the entry table's; give the dataset another slug`);
+				const entry = { def: d, columns: [], rows: null };
+				datasets.set(d.slug, entry);
+
+				if (!Array.isArray(d.columns) || d.columns.length === 0 || d.columns.length > LIMITS.datasetColumns) r(`${w}: "columns" must be a list of 1 to ${LIMITS.datasetColumns} columns`);
+				else {
+					d.columns.forEach((c, j) => {
+						const cw = `${w}.columns[${j}]`;
+						if (!c || typeof c !== 'object' || Array.isArray(c)) return r(`${cw} must be { column: 'name' }`);
+						for (const k of Object.keys(c)) if (k !== 'column') r(`${cw}: unknown key "${k}" (every dataset column is text)`);
+						if (typeof c.column !== 'string' || !COLUMN_RE.test(c.column)) return r(`${cw}: "column" must be lowercase letters, digits and underscores`);
+						if (entry.columns.includes(c.column)) return r(`${cw}: column "${c.column}" is declared twice`);
+						entry.columns.push(c.column);
+					});
+				}
+				if (typeof d.key !== 'string' || !entry.columns.includes(d.key)) r(`${w}: "key" must be one of the dataset's columns`);
+
+				const credit = d.credit;
+				if (!credit || typeof credit !== 'object' || Array.isArray(credit)) r(`${w}: "credit" must be { name, url, note }, saying where the data comes from`);
+				else {
+					for (const k of Object.keys(credit)) if (!CREDIT_KEYS.includes(k)) r(`${w}.credit: unknown key "${k}" (allowed: ${CREDIT_KEYS.join(', ')})`);
+					if (typeof credit.name !== 'string' || !credit.name.trim() || credit.name.length > 60) r(`${w}.credit: "name" must be a short non-empty string`);
+					if (typeof credit.url !== 'string' || !HTTPS_URL_RE.test(credit.url) || credit.url.length > 200) r(`${w}.credit: "url" must be an https:// link to the source`);
+					if ('note' in credit && (typeof credit.note !== 'string' || !credit.note.trim() || credit.note.length > 80)) r(`${w}.credit: "note" must be a short non-empty string`);
+				}
+
+				if (typeof d.file !== 'string' || !DATASET_FILE_RE.test(d.file)) return r(`${w}: "file" must be a path inside the passport's data/ folder, like data/${d.slug}.csv`);
+				if (usedFiles.has(d.file)) return r(`${w}: "${d.file}" is used by two datasets`);
+				usedFiles.add(d.file);
+				const filePath = path.join(dir, d.file);
+				if (!fs.existsSync(filePath)) return r(`${w}: ${d.file} does not exist`);
+				const raw = fs.readFileSync(filePath, 'utf8');
+				const c = (msg) => fail(`${d.file}: ${msg}`);
+				if (Buffer.byteLength(raw) > LIMITS.datasetBytes) c(`is larger than ${LIMITS.datasetBytes / 1000} KB`);
+				const csv = parseCsv(raw);
+				for (const m of csv.errors) c(m);
+				if (csv.errors.length) return;
+				const [header, ...body] = csv.rows;
+				if (!header || JSON.stringify(header) !== JSON.stringify(entry.columns)) return c(`the first line must be the columns, ${entry.columns.join(',')}`);
+				if (body.length === 0 || body.length > LIMITS.datasetRows) return c(`must have 1 to ${LIMITS.datasetRows} rows`);
+				if (!entry.columns.includes(d.key)) return; // already reported above
+				const keyAt = entry.columns.indexOf(d.key);
+				const seen = new Set();
+				body.forEach((cells, n) => {
+					const line = n + 2;
+					if (cells.length !== entry.columns.length) return c(`line ${line} has ${cells.length} cells, not ${entry.columns.length}`);
+					for (const v of cells) {
+						if (v.length > LIMITS.datasetCell) c(`line ${line} has a cell longer than ${LIMITS.datasetCell} characters`);
+						if (/[\u0000-\u001f\u007f<>]/.test(v)) c(`line ${line} has a control character or a < or >`);
+					}
+					const k = cells[keyAt];
+					if (!k.trim()) c(`line ${line}: the key column "${d.key}" is empty`);
+					else if (seen.has(k)) c(`line ${line}: "${k}" is already a ${d.key}; keys must be unique`);
+					seen.add(k);
+				});
+				entry.rows = body.map((cells) => Object.fromEntries(entry.columns.map((col, j) => [col, cells[j]])));
+			});
+		}
+	}
+	for (const f of dataFiles) if (f.endsWith('.csv') && !usedFiles.has(`${DATA_DIR}/${f}`)) fail(`${DATA_DIR}/${f} is not used by any dataset in "datasets"`);
+
 	// fields
 	const columns = new Map();
 	if (!Array.isArray(reg.fields) || reg.fields.length === 0) r('"fields" must be a non-empty list');
@@ -242,7 +329,7 @@ export function validatePlugin(dir, { reserved = [] } = {}) {
 		reg.fields.forEach((f, i) => {
 			const w = `fields[${i}]`;
 			if (!f || typeof f !== 'object' || Array.isArray(f)) return r(`${w} must be an object`);
-			for (const k of Object.keys(f)) if (!['column', 'label', 'type', 'required', 'options', 'card'].includes(k)) r(`${w}: unknown key "${k}"`);
+			for (const k of Object.keys(f)) if (!FIELD_KEYS.includes(k)) r(`${w}: unknown key "${k}"`);
 			if (typeof f.column !== 'string' || !COLUMN_RE.test(f.column)) return r(`${w}: "column" must be lowercase letters, digits and underscores`);
 			if (STANDARD_COLUMNS.includes(f.column)) r(`${w}: "${f.column}" is a standard column every passport already has`);
 			if (columns.has(f.column)) r(`${w}: column "${f.column}" is declared twice`);
@@ -256,6 +343,37 @@ export function validatePlugin(dir, { reserved = [] } = {}) {
 				}
 			} else if ('options' in f) r(`${w}: "options" is only for "select" fields`);
 			if ('card' in f && (typeof f.card !== 'string' || !COLUMN_RE.test(f.card))) r(`${w}: "card" must be a prop name (letters, digits, underscores)`);
+			if (f.type === 'lookup') {
+				const ds = typeof f.dataset === 'string' ? datasets.get(f.dataset) : null;
+				if (!ds) r(`${w}: a "lookup" needs "dataset", the slug of one of this passport's "datasets"`);
+				else {
+					const dcol = (prop, v) => {
+						if (typeof v !== 'string' || !ds.columns.includes(v)) r(`${w}: "${prop}" names ${JSON.stringify(v)}, which is not a column of dataset "${f.dataset}"`);
+					};
+					if ('find' in f) {
+						if (!Array.isArray(f.find) || f.find.length === 0) r(`${w}: "find" must be a list of dataset columns`);
+						else for (const v of f.find) dcol('find', v);
+					}
+					for (const prop of ['show', 'sub']) if (prop in f) dcol(prop, f[prop]);
+				}
+			} else for (const k of ['dataset', 'find', 'show', 'sub', 'fill']) if (k in f) r(`${w}: "${k}" is only for "lookup" fields`);
+		});
+		// A lookup's `fill` copies columns of the picked row into other text fields of the entry; the form doesn't show those.
+		const filled = new Set();
+		reg.fields.forEach((f, i) => {
+			if (!f || f.type !== 'lookup' || !('fill' in f)) return;
+			const w = `fields[${i}]`;
+			if (!f.fill || typeof f.fill !== 'object' || Array.isArray(f.fill) || Object.keys(f.fill).length === 0) return r(`${w}: "fill" must be { field: 'dataset column' }`);
+			const ds = typeof f.dataset === 'string' ? datasets.get(f.dataset) : null;
+			for (const [target, from] of Object.entries(f.fill)) {
+				const t = columns.get(target);
+				if (!t) r(`${w}: "fill" names ${JSON.stringify(target)}, which is not a field`);
+				else if (t.type !== 'text') r(`${w}: "fill" can only set a text field, but "${target}" is ${t.type}`);
+				else if (target === f.column) r(`${w}: "fill" can't set the lookup field itself`);
+				else if (filled.has(target)) r(`${w}: "${target}" is filled by two lookups`);
+				filled.add(target);
+				if (ds && !ds.columns.includes(from)) r(`${w}: "fill" takes ${JSON.stringify(from)}, which is not a column of dataset "${f.dataset}"`);
+			}
 		});
 		const props = reg.fields.map((f) => f?.card).filter(Boolean);
 		if (new Set(props).size !== props.length) r('two fields feed the same card prop');
@@ -279,18 +397,35 @@ export function validatePlugin(dir, { reserved = [] } = {}) {
 				if ('title' in p && (typeof p.title !== 'string' || !p.title.trim() || p.title.length > 60)) r(`${w}: "title" must be a short non-empty string`);
 				if ('pin' in p && (typeof p.pin !== 'string' || !p.pin.trim() || p.pin.length > 16)) r(`${w}: "pin" must be one emoji`);
 				if ('size' in p && p.size !== 'full' && p.size !== 'half') r(`${w}: "size" must be "full" or "half"`);
-				const column = (prop, types) => {
-					if (!(prop in p)) return false;
-					const f = columns.get(p[prop]);
-					if (!f) r(`${w}: "${prop}" names ${JSON.stringify(p[prop])}, which is not a field`);
-					else if (!types.includes(f.type)) r(`${w}: "${prop}" must be a ${types.join(' or ')} field, but "${p[prop]}" is ${f.type}`);
-					return true;
-				};
-				if (!column('lat', ['number'])) r(`${w}: needs "lat"`);
-				if (!column('lon', ['number'])) r(`${w}: needs "lon"`);
-				column('label', ['text', 'longtext', 'select']);
-				column('sublabel', ['text', 'longtext', 'select']);
-				column('date', ['date']);
+				if (p.kind === 'progress') {
+					// A progress chart counts the distinct values of a lookup field against the rows of its dataset.
+					// `label` is the dataset column written in a filled slot, `sublabel` the one shown when you point at it.
+					if (!PROGRESS_LOOKS.includes(p.look)) r(`${w}: "look" must be one of ${PROGRESS_LOOKS.join(', ')}`);
+					const f = columns.get(p.count);
+					if (!f) r(`${w}: "count" names ${JSON.stringify(p.count)}, which is not a field`);
+					else if (f.type !== 'lookup') r(`${w}: "count" must be a lookup field, but "${p.count}" is ${f.type}`);
+					else if (p.of !== f.dataset) r(`${w}: "of" must be "${f.dataset}", the dataset of "${p.count}"`);
+					for (const prop of ['label', 'sublabel']) {
+						if (!(prop in p)) continue;
+						const ds = datasets.get(p.of);
+						if (!ds || !ds.columns.includes(p[prop])) r(`${w}: "${prop}" must be a column of dataset ${JSON.stringify(p.of)}`);
+					}
+					for (const k of ['lat', 'lon', 'date', 'pin']) if (k in p) r(`${w}: "${k}" is not for a progress chart`);
+				} else {
+					for (const k of ['look', 'count', 'of']) if (k in p) r(`${w}: "${k}" is only for a progress chart`);
+					const column = (prop, types) => {
+						if (!(prop in p)) return false;
+						const f = columns.get(p[prop]);
+						if (!f) r(`${w}: "${prop}" names ${JSON.stringify(p[prop])}, which is not a field`);
+						else if (!types.includes(f.type)) r(`${w}: "${prop}" must be a ${types.join(' or ')} field, but "${p[prop]}" is ${f.type}`);
+						return true;
+					};
+					if (!column('lat', ['number'])) r(`${w}: needs "lat"`);
+					if (!column('lon', ['number'])) r(`${w}: needs "lon"`);
+					column('label', ['text', 'longtext', 'select']);
+					column('sublabel', ['text', 'longtext', 'select']);
+					column('date', ['date']);
+				}
 			});
 		}
 	}
@@ -440,6 +575,10 @@ export function validatePlugin(dir, { reserved = [] } = {}) {
 						if (f.type === 'number' ? typeof v !== 'number' : typeof v !== 'string') s(`row ${i}: "${k}" must be ${f.type === 'number' ? 'a number' : 'text'}`);
 						else if (f.type === 'date' && !DATE_RE.test(v)) s(`row ${i}: "${k}" must be a date like 2025-07-15`);
 						else if (f.type === 'select' && !f.options?.includes(v)) s(`row ${i}: "${k}" must be one of ${JSON.stringify(f.options)}`);
+						else if (f.type === 'lookup') {
+							const ds = datasets.get(f.dataset);
+							if (ds?.rows && !ds.rows.some((row) => row[ds.def.key] === v)) s(`row ${i}: "${k}" must be a ${ds.def.key} from ${ds.def.file}`);
+						}
 					}
 					for (const f of columns.values()) if (f.required && !(f.column in row)) s(`row ${i}: missing required field "${f.column}"`);
 				});
