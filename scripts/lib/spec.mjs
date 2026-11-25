@@ -41,6 +41,7 @@ export const REGISTRY_KEYS = [
 	'plots',
 	'filters',
 	'source',
+	'entryColor',
 	'authors',
 	'license',
 	'repository'

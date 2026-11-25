@@ -11,6 +11,9 @@ export default {
 	hasVisibility: true,
 	dateFields: ['visit_date'],
 
+	// The owner picks one color for all of their visits; each card receives it as `color` and keeps its own ink without one.
+	entryColor: true,
+
 	// The manifest: who made it and under what terms (credited wherever the passport is shown).
 	authors: [{ name: 'Teon L. Brooks', url: 'https://teonbrooks.com', did: 'did:plc:yl7wcldipsfnjdww2jg5mnrv' }],
 	license: 'MIT',

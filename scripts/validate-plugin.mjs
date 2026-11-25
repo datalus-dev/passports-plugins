@@ -208,6 +208,7 @@ export function validatePlugin(dir, { reserved = [] } = {}) {
 		if (k in reg && (typeof reg[k] !== 'string' || !reg[k].trim() || reg[k].length > 120)) r(`"${k}" must be a short non-empty string`);
 	}
 	if ('hasVisibility' in reg && reg.hasVisibility !== true) r('"hasVisibility" must be true (every community passport entry has a visibility)');
+	if ('entryColor' in reg && typeof reg.entryColor !== 'boolean') r('"entryColor" must be true or false');
 	if ('folioName' in reg && reg.folioName !== null) r('"folioName" must be null (folios are not supported yet)');
 
 	if (typeof reg.entryTable !== 'string' || !TABLE_RE.test(reg.entryTable)) r('"entryTable" must be lowercase letters, digits and underscores');

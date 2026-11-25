@@ -165,6 +165,8 @@ describe('registry.ts', () => {
 	it('may not call functions', () => hasError(withRegistry((s) => s.replace("name: 'National Parks'", "name: String('National Parks')")), 'only literal values'));
 	it('may not spread', () => hasError(withRegistry((s) => s.replace('hasVisibility: true,', 'hasVisibility: true,\n\t...other,')), 'only `key: value`'));
 	it('may not set cache or atproto keys', () => hasError(withRegistry((s) => s.replace('hasVisibility: true,', "hasVisibility: true,\n\tcache: { columns: ['id'] },")), 'unknown key "cache"'));
+	it('may set entryColor to true or false', () => expect(withRegistry((s) => s.replace('hasVisibility: true,', 'hasVisibility: true,\n\tentryColor: true,'))).toEqual([]));
+	it('entryColor must be true or false', () => hasError(withRegistry((s) => s.replace('hasVisibility: true,', "hasVisibility: true,\n\tentryColor: 'teal',")), '"entryColor" must be true or false'));
 	it('slug must match the folder', () => hasError(check(null, 'other_name'), 'must match'));
 	it('slug may not be a core passport', () => hasError(withRegistry((s) => s.replace("slug: 'national_parks'", "slug: 'travel'")), 'core passport'));
 	it('entryTable must start with the slug', () => hasError(withRegistry((s) => s.replace("'national_parks_visits'", "'visits'")), 'must start with "national_parks_"'));

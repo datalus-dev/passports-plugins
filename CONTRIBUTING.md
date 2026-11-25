@@ -32,6 +32,7 @@ One `export default { … }` made only of plain values (strings, numbers, true, 
 | `plots` | Optional; charts the app draws from your entries, below. |
 | `filters` | Optional; columns the entries can be narrowed by, below. |
 | `source` | Optional; where the entries come from when the owner doesn't type them in, below. |
+| `entryColor` | Optional; `true` lets the owner pick one color for all of their entries in this passport. Each card receives it as a `color` prop, and keeps its own default when there is none. |
 
 Each entry has a note and a visibility already; do not declare them. The app always generates your passport's table from `fields`; a passport can't point at a table that already exists (that is only for the app's own passports).
 
@@ -111,7 +112,7 @@ source: {
 
 A card draws one entry from plain props and does nothing else.
 
-- Read props with `$props()`: the ones you named in `card`, plus `variant` (`'full'` or `'simplified'`), `font` (`'mono'` or `'inherit'`), and the optional snippets `controls` and `strip` (the app draws its select and delete controls and the visibility row there; draw them inside your card's own box, and not at all when `variant` is `'simplified'`).
+- Read props with `$props()`: the ones you named in `card`, plus `color` (the owner's entry color, only when the registry sets `entryColor: true`), `variant` (`'full'` or `'simplified'`), `font` (`'mono'` or `'inherit'`), and the optional snippets `controls` and `strip` (the app draws its select and delete controls and the visibility row there; draw them inside your card's own box, and not at all when `variant` is `'simplified'`).
 - Import only from `svelte`. No `fetch`, storage, `document` or `window`, no dynamic `import()`, no `{@html}`, no `<iframe>`, no `<svelte:window>` or `<svelte:head>`.
 - Scoped styles only: no `:global` and no `@import`. Prefix your class names (`np-card`, not `card`): DaisyUI styles bare names such as `card`, `badge`, `toggle` and `label` everywhere.
 - The card's outer box should be `position: relative`, so the app's controls land on it.
