@@ -5,7 +5,7 @@ export default {
 	description: 'Log your visits to national parks.',
 	entryName: 'visit',
 	entriesTitle: 'Visits',
-	entrySlugs: ['national_park_stamp'],
+	entrySlugs: ['national_park_stamp', 'national_park_card'],
 	folioName: null,
 	entryTable: 'national_parks_visits',
 	hasVisibility: true,
