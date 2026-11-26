@@ -1,9 +1,15 @@
 // The rules a community passport must follow. Both CI here and the app's `plugins:sync` read this file,
 // so there is one place to change them.
 
-export const FIELD_TYPES = ['text', 'longtext', 'date', 'number', 'select', 'lookup'];
+export const FIELD_TYPES = ['text', 'longtext', 'date', 'number', 'select', 'lookup', 'color'];
 // What a field may say. `dataset`, `find`, `show`, `sub` and `fill` belong to a `lookup` field only.
 export const FIELD_KEYS = ['column', 'label', 'type', 'required', 'options', 'card', 'dataset', 'find', 'show', 'sub', 'fill'];
+
+// A `color` field's palette: `options`, 1 to LIMITS.colorOptions { value, label } objects. A value is an oklch() or a #hex
+// color and nothing else, because it is later used as a CSS value. Keep in step with COLOR_VALUE_RE in
+// src/lib/passport-fields.ts in the app.
+export const COLOR_VALUE_RE = /^(oklch\(\d{1,3}(\.\d+)?% \d(\.\d+)? \d{1,3}(\.\d+)?\)|#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}))$/;
+export const COLOR_LABEL_MAX = 24;
 
 // Columns every passport table gets; a plugin may not declare them as fields.
 export const STANDARD_COLUMNS = [
@@ -89,7 +95,7 @@ export const REQUIRED_REGISTRY_KEYS = [
 	'license'
 ];
 
-export const LIMITS = { fields: 20, plots: 6, sourceColumns: 20, authors: 10, selectOptions: 30, sample: 12, registryBytes: 20_000, cardBytes: 30_000, sampleBytes: 20_000, datasets: 3, datasetColumns: 6, datasetRows: 1000, datasetBytes: 100_000, datasetCell: 200 };
+export const LIMITS = { fields: 20, plots: 6, sourceColumns: 20, authors: 10, selectOptions: 30, colorOptions: 12, sample: 12, registryBytes: 20_000, cardBytes: 30_000, sampleBytes: 20_000, datasets: 3, datasetColumns: 6, datasetRows: 1000, datasetBytes: 100_000, datasetCell: 200 };
 
 // The manifest: who made the passport and under what terms. Shown wherever the passport is credited.
 // A passport is copied into the app and published, so its license has to allow that; these are the permissive ones.

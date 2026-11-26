@@ -176,6 +176,36 @@ describe('registry.ts', () => {
 	it('a field column may not repeat', () => hasError(withRegistry((s) => s.replace("column: 'park_code'", "column: 'park_name'")), 'declared twice'));
 	it('a field type must be known', () => hasError(withRegistry((s) => s.replace("type: 'date'", "type: 'sql'")), '"type" must be one of'));
 	it('a select needs options', () => hasError(withRegistry((s) => s.replace("type: 'date'", "type: 'select'")), '"select" needs "options"'));
+	it('a color field passes, with or without a palette', () => {
+		expect(withRegistry((s) => s.replace("column: 'park_code'", "column: 'color', label: 'Color', type: 'color', card: 'color' }, { column: 'park_code'"))).toEqual([]);
+		expect(withRegistry((s) => s.replace("column: 'park_code'", "column: 'color', label: 'Color', type: 'color', card: 'color', options: [{ value: 'oklch(40% 0.12 200)', label: 'Teal' }, { value: '#fa0', label: 'Amber' }, { value: '#0b5a3c', label: 'Pine' }] }, { column: 'park_code'"))).toEqual([]);
+	});
+	const colorField = (options) => withRegistry((s) => s.replace("column: 'park_code'", `column: 'color', label: 'Color', type: 'color', options: ${options} }, { column: 'park_code'`));
+	const T = "{ value: 'oklch(40% 0.12 200)', label: 'Teal' }";
+	it('color options may not be empty or strings', () => {
+		hasError(colorField('[]'), '"color" field');
+		hasError(colorField("['red']"), '"color" field');
+	});
+	it('a color value must be oklch or hex', () => {
+		hasError(colorField("[{ value: 'red', label: 'Red' }]"), '"color" field');
+		hasError(colorField("[{ value: 'oklch(40% 0.12 200); x', label: 'Bad' }]"), '"color" field');
+		hasError(colorField("[{ value: 'url(x)', label: 'Bad' }]"), '"color" field');
+		hasError(colorField("[{ value: '#12345', label: 'Bad' }]"), '"color" field');
+	});
+	it('a color label must be short and non-empty', () => {
+		hasError(colorField("[{ value: '#fff', label: '' }]"), '"color" field');
+		hasError(colorField(`[{ value: '#fff', label: '${'x'.repeat(25)}' }]`), '"color" field');
+	});
+	it('color options may not repeat a value or label', () => {
+		hasError(colorField(`[${T}, { value: 'oklch(40% 0.12 200)', label: 'Other' }]`), 'unique');
+		hasError(colorField(`[${T}, { value: '#fff', label: 'Teal' }]`), 'unique');
+	});
+	it('a palette is at most 12 colors', () => {
+		const many = Array.from({ length: 13 }, (_, i) => `{ value: '#00${(i + 16).toString(16)}', label: 'C${i}' }`).join(', ');
+		hasError(colorField(`[${many}]`), '1 to 12');
+	});
+	it('color options may not carry other keys', () => hasError(colorField("[{ value: '#fff', label: 'White', css: 'x' }]"), '"color" field'));
+	it('options are not for a text field', () => hasError(withRegistry((s) => s.replace("column: 'park_code', label: 'Park code', type: 'text'", "column: 'park_code', label: 'Park code', type: 'text', options: ['a']")), 'only for "select" and "color"'));
 	it('dateFields must list exactly the date fields', () => hasError(withRegistry((s) => s.replace("dateFields: ['visit_date']", 'dateFields: []')), '"dateFields" must list exactly'));
 	it('two fields may not feed one card prop', () => hasError(withRegistry((s) => s.replace("card: 'code'", "card: 'title'")), 'same card prop'));
 });
@@ -186,5 +216,16 @@ describe('the folder', () => {
 	it('needs sample.json', () => hasError(check(({ dir }) => fs.rmSync(path.join(dir, 'sample.json'))), 'missing sample.json'));
 	it('sample rows may only use declared fields', () => hasError(check(({ write }) => write('sample.json', '[{"park_name":"A","ghost":"x"}]')), '"ghost" is not a field'));
 	it('sample rows need required fields', () => hasError(check(({ write }) => write('sample.json', '[{"park_code":"A"}]')), 'missing required field "park_name"'));
+	const withColorSample = (palette, sample) =>
+		check(({ read, write }) => {
+			write('registry.ts', read('registry.ts').replace("column: 'park_code'", `column: 'color', label: 'Color', type: 'color', ${palette} }, { column: 'park_code'`));
+			write('sample.json', sample);
+		});
+	it('a sample color may be empty or one of the palette', () => {
+		const palette = "options: [{ value: '#fff', label: 'White' }]";
+		expect(withColorSample(palette, '[{"park_name":"A","color":"#fff"},{"park_name":"B","color":""}]')).toEqual([]);
+	});
+	it('a sample color must be in the palette', () => hasError(withColorSample("options: [{ value: '#fff', label: 'White' }]", '[{"park_name":"A","color":"#000"}]'), "must be one of the field's colors"));
+	it('a sample color without a palette must still be a color', () => hasError(withColorSample("card: 'color'", '[{"park_name":"A","color":"url(x)"}]'), "must be one of the field's colors"));
 	it('sample dates must be dates', () => hasError(check(({ write }) => write('sample.json', '[{"park_name":"A","visit_date":"yesterday"}]')), 'must be a date'));
 });

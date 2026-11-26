@@ -58,9 +58,20 @@ Each field is a column in the passport's table, a control in the add and edit fo
 ```
 
 - `column`: lowercase letters, digits and underscores. Not one of the standard columns (`id`, `user_id`, `visibility`, `note`, `image_paths`, `entry_source`, `created_at`, `updated_at`, `atproto_*`).
-- `type`: `text`, `longtext`, `date`, `number`, `select` (needs `options`, a list of strings) or `lookup` (needs `dataset`; see `datasets` below).
+- `type`: `text`, `longtext`, `date`, `number`, `select` (needs `options`, a list of strings), `color` (may have `options`; see below) or `lookup` (needs `dataset`; see `datasets` below).
 - `required`: optional; `true` makes the form require it.
 - `card`: optional; the name of the card prop this column feeds.
+
+A `color` field lets the owner give each entry its own color. The form shows a grid of swatches and an Auto swatch; Auto stores nothing.
+
+```ts
+{ column: 'color', label: 'Color', type: 'color', card: 'color' }
+```
+
+- With no `options`, the palette is the app's entry colors. To use your own, give `options`: 1 to 12 objects `{ value, label }`. A `value` is an `oklch(40% 0.12 200)` (plain numbers) or a `#rgb` / `#rrggbb` color and nothing else, a `label` is a short name (at most 24 characters), and values and labels are each unique.
+- The card gets the color only when it is one of the palette's values. Anything else, including an empty entry, arrives as no prop. If you later remove a color from the palette, entries that used it show the fallback; the stored text is left alone, and adding the color back brings them back.
+- A field whose `card` is `color` is also the entry's own color in the app's cascade: the entry's color, then the owner's passport-wide `entryColor`, then your card's own default. A color field with any other `card` name is just another prop, with no cascade. A passport may have two color fields; only the one named `color` joins the cascade.
+- A passport that adds a `color` field after its table exists needs an `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` migration in the app; ask a maintainer.
 
 ### `datasets` and `lookup` fields
 

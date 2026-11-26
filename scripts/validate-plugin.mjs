@@ -29,6 +29,8 @@ import {
 	FIELD_KEYS,
 	FIELD_TYPES,
 	HTTPS_URL_RE,
+	COLOR_LABEL_MAX,
+	COLOR_VALUE_RE,
 	LICENSES,
 	FORBIDDEN_ELEMENTS,
 	FORBIDDEN_IDENTIFIERS,
@@ -341,7 +343,15 @@ export function validatePlugin(dir, { reserved = [] } = {}) {
 				if (!Array.isArray(f.options) || f.options.length === 0 || f.options.length > LIMITS.selectOptions || !f.options.every((o) => typeof o === 'string' && o.trim())) {
 					r(`${w}: a "select" needs "options", a list of 1 to ${LIMITS.selectOptions} non-empty strings`);
 				}
-			} else if ('options' in f) r(`${w}: "options" is only for "select" fields`);
+			} else if (f.type === 'color') {
+				if ('options' in f) {
+					const o = f.options;
+					const shaped = Array.isArray(o) && o.length > 0 && o.length <= LIMITS.colorOptions && o.every((c) => c && typeof c === 'object' && !Array.isArray(c) && Object.keys(c).every((k) => k === 'value' || k === 'label'));
+					if (!shaped || !o.every((c) => typeof c.value === 'string' && COLOR_VALUE_RE.test(c.value) && typeof c.label === 'string' && c.label.trim() && c.label.length <= COLOR_LABEL_MAX)) {
+						r(`${w}: a "color" field's "options" is a list of 1 to ${LIMITS.colorOptions} { value, label } colors; a value is an oklch(40% 0.12 200) or #hex color, a label is a short name (at most ${COLOR_LABEL_MAX} characters)`);
+					} else if (new Set(o.map((c) => c.value)).size !== o.length || new Set(o.map((c) => c.label)).size !== o.length) r(`${w}: the colors in "options" need unique values and unique labels`);
+				}
+			} else if ('options' in f) r(`${w}: "options" is only for "select" and "color" fields`);
 			if ('card' in f && (typeof f.card !== 'string' || !COLUMN_RE.test(f.card))) r(`${w}: "card" must be a prop name (letters, digits, underscores)`);
 			if (f.type === 'lookup') {
 				const ds = typeof f.dataset === 'string' ? datasets.get(f.dataset) : null;
@@ -574,6 +584,7 @@ export function validatePlugin(dir, { reserved = [] } = {}) {
 						}
 						if (f.type === 'number' ? typeof v !== 'number' : typeof v !== 'string') s(`row ${i}: "${k}" must be ${f.type === 'number' ? 'a number' : 'text'}`);
 						else if (f.type === 'date' && !DATE_RE.test(v)) s(`row ${i}: "${k}" must be a date like 2025-07-15`);
+						else if (f.type === 'color' && v !== '' && !(f.options ? f.options.map((c) => c.value).includes(v) : COLOR_VALUE_RE.test(v))) s(`row ${i}: "${k}" must be one of the field's colors`);
 						else if (f.type === 'select' && !f.options?.includes(v)) s(`row ${i}: "${k}" must be one of ${JSON.stringify(f.options)}`);
 						else if (f.type === 'lookup') {
 							const ds = datasets.get(f.dataset);
