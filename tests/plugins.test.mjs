@@ -38,12 +38,14 @@ function propsOf(registry, row) {
 describe.each(folders)('the %s plugin', (folder) => {
 	const dir = path.join(PASSPORTS, folder);
 
-	it('passes the validator', () => expect(validatePlugin(dir, { reserved }).errors).toEqual([]));
+	const errors = validatePlugin(dir, { reserved }).errors;
+	it('passes the validator', () => expect(errors).toEqual([]));
 
 	const registry = parseRegistry(fs.readFileSync(path.join(dir, 'registry.ts'), 'utf8')).value;
 	const sample = JSON.parse(fs.readFileSync(path.join(dir, 'sample.json'), 'utf8'));
 
-	describe.each(registry.entrySlugs)('card %s', (slug) => {
+	// A card runs here, so only a plugin the validator accepted (no fetch, no imports but svelte, ...) gets drawn.
+	describe.skipIf(errors.length > 0).each(registry.entrySlugs)('card %s', (slug) => {
 		it.each(['full', 'simplified'])('draws every sample row, %s', async (variant) => {
 			const mod = await vite.ssrLoadModule(path.join(dir, 'cards', `${slug}.svelte`));
 			for (const row of sample) {

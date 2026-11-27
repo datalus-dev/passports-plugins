@@ -27,6 +27,7 @@ See your cards drawn from `sample.json`, in both variants:
 
 ```bash
 npm run preview   # http://localhost:5195
+npm run preview:build   # the same preview as static files in preview-dist/ (CI uploads it on every pull request)
 ```
 
 The same checks run on every pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for the rules and for how a plugin goes from a pull request into the app.

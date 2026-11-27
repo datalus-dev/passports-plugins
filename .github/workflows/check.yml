@@ -40,7 +40,9 @@ jobs:
           node-version: 22
           cache: npm
 
-      # Installs only this repo's own tools (svelte, typescript, vitest). Nothing from a plugin is installed or run.
+      # Installs only this repo's own tools (svelte, typescript, vitest). Nothing from a plugin is installed. A plugin's cards
+      # are compiled and drawn in the tests and the preview only after the validator has accepted them (no network, no imports
+      # but svelte, no globals), and this job has a read-only token and no secrets.
       - run: npm ci --ignore-scripts
 
       - name: Test the checks
@@ -48,3 +50,15 @@ jobs:
 
       - name: Check every plugin
         run: npm run validate
+
+      # The preview app draws every plugin's cards from its sample.json. Download the artifact, unzip it and serve the
+      # folder (`npx vite preview --outDir <folder>` or any static server) to look at the cards before approving.
+      - name: Build the cards preview
+        run: npm run preview:build
+
+      - name: Upload the cards preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: cards-preview
+          path: preview-dist
+          retention-days: 14
